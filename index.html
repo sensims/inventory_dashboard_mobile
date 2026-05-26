@@ -67,7 +67,9 @@ body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkM
 .tab-content.active { display:block; }
 
 /* Overview filter bar */
-.overview-filter-bar { padding:10px 14px 0; display:flex; justify-content:center; }
+.overview-filter-bar { padding:10px 14px 0; display:flex; justify-content:space-between; align-items:center; }
+.overview-filter-bar .reset-btn { font-size:12px; color:var(--accent); background:var(--accent-light); border:none; border-radius:6px; padding:5px 12px; cursor:pointer; font-weight:600; white-space:nowrap; }
+.overview-filter-bar .reset-btn:active { background:var(--accent); color:#fff; }
 .overview-filter-bar .quick-store-select { max-width:200px; }
 
 /* ========== Tab 1: Overview ========== */
@@ -216,8 +218,8 @@ body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkM
     <div id="mobileProgress"></div>
   </div>
   <div class="version-info">
-    <span class="version-text">版本：v3.0 | 2026-05-24</span>
-    <span class="version-note">加入品种对应的部门及计划员信息，信息来源为科组0430对应目录</span>
+    <span class="version-text">版本：v4.0 | 2026-05-26</span>
+    <span class="version-note">在库天数改为直接读取Excel「在库天数」字段，不再由入库日期/生产日期计算</span>
   </div>
 </div>
 
@@ -232,6 +234,7 @@ body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkM
   <!-- Tab 1: Overview -->
   <div id="tabOverview" class="tab-content active">
     <div class="overview-filter-bar">
+      <button class="filter-btn reset-btn" onclick="resetFilters()" style="margin-right:8px;flex-shrink:0;">🔄 重置</button>
       <select id="mOverviewStoreFilter" class="quick-store-select" onchange="onOverviewStoreChange()">
         <option value="all">🏪 全部保管账</option>
       </select>
@@ -852,6 +855,10 @@ function renderDetailCards(recs) {
     html += '<div class="item-row">';
     if (r['有效期']) html += '<span>失效: <span class="val">'+r['有效期']+'</span></span>';
     if (r['距离失效天数']!=null) html += '<span>距失效: <span class="val" style="color:'+(r['距离失效天数']<0?'var(--red)':r['距离失效天数']<=30?'var(--orange)':'var(--text)')+'">'+r['距离失效天数']+'天</span></span>';
+    html += '</div>';
+    html += '<div class="item-row">';
+    html += '<span>在库天数: <span class="val'+(r['在库天数']!=null && r['在库天数']>180?' warn':'')+'" style="color:'+(r['在库天数']!=null&&r['在库天数']>180?'var(--orange)':r['在库天数']!=null&&r['在库天数']>365?'var(--red)':'var(--text)')+'">'+(r['在库天数']!=null?r['在库天数']+'天':'-')+'</span></span>';
+    if (r['在库天数分类']) html += '<span>分类: <span class="val">'+r['在库天数分类']+'</span></span>';
     html += '</div>';
     if (r['产品部门'] || r['计划员']) {
       html += '<div class="item-row">';
