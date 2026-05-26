@@ -478,6 +478,29 @@ function formatDate(val) {
   return y+'-'+m+'-'+day;
 }
 
+/* 按货品ID+批号去重合并：同一货品ID+批号的记录合并为1条，数量/金额累加，在库天数保持不变 */
+function dedupByBatch(recs) {
+  var seen = {};
+  var result = [];
+  recs.forEach(function(r) {
+    var itemId = String(r['货品ID']||'').trim();
+    var batchNo = String(r['批号']||'').trim();
+    var key = itemId + '|||' + batchNo;
+    if (!seen[key]) {
+      seen[key] = { idx: result.length, rec: {} };
+      // 深拷贝第一条记录
+      Object.keys(r).forEach(function(k) { seen[key].rec[k] = r[k]; });
+      result.push(seen[key].rec);
+    }
+    // 累加数量
+    var merged = seen[key].rec;
+    merged['数量'] = (parseFloat(merged['数量'])||0) + (parseFloat(r['数量'])||0);
+    // 累加品种价格参考
+    merged['品种价格参考'] = Math.round(((parseFloat(merged['品种价格参考'])||0) + (parseFloat(r['品种价格参考'])||0)) * 100) / 100;
+  });
+  return result;
+}
+
 function processInventoryData(records, mapping) {
   var today = new Date(); today.setHours(0,0,0,0);
   var mappingLookup = {};
@@ -497,8 +520,8 @@ function processInventoryData(records, mapping) {
     row['有效期'] = formatDate(r['有效期']);
     row['生产日期'] = formatDate(r['生产日期']);
     if (expDate) { row['距离失效天数'] = Math.floor((expDate.getTime()-today.getTime())/86400000); } else { row['距离失效天数'] = null; }
-    var inDate = parseDate(r['入库日期']) || prodDate;
-    if (inDate) { row['在库天数'] = Math.floor((today.getTime()-inDate.getTime())/86400000); } else { row['在库天数'] = null; }
+    var inStorageDays = parseFloat(r['在库天数']);
+    row['在库天数'] = (!isNaN(inStorageDays)) ? inStorageDays : null;
     var ed = row['距离失效天数'];
     if (ed===null||ed==='') row['距离失效分类']='';
     else if (ed<0) row['距离失效分类']='已过期';
@@ -529,7 +552,9 @@ function processInventoryData(records, mapping) {
   EXPIRE_ORDER.forEach(function(k){summary.expireStats[k]={count:0,qty:0};});
   processed.forEach(function(r){ var k=r['距离失效分类']; if(summary.expireStats[k]){summary.expireStats[k].count++;summary.expireStats[k].qty+=(parseFloat(r['数量'])||0);} });
   STORAGE_ORDER.forEach(function(k){summary.storageStats[k]={count:0,qty:0};});
-  processed.forEach(function(r){ var k=r['在库天数分类']; if(summary.storageStats[k]){summary.storageStats[k].count++;summary.storageStats[k].qty+=(parseFloat(r['数量'])||0);} });
+  var dedupProcessed = dedupByBatch(processed);
+  dedupProcessed.forEach(function(r){ var k=r['在库天数分类']; if(summary.storageStats[k]){summary.storageStats[k].count++;} });
+  processed.forEach(function(r){ var k=r['在库天数分类']; if(summary.storageStats[k]){summary.storageStats[k].qty+=(parseFloat(r['数量'])||0);} });
   return {records:processed, summary:summary};
 }
 
@@ -688,7 +713,8 @@ function renderStats() {
   var totalQty = recs.reduce(function(s,r){return s+(parseFloat(r['数量'])||0);},0);
   var totalValue = recs.reduce(function(s,r){return s+(r['品种价格参考']||0);},0);
   var expiredCount = recs.filter(function(r){return r['距离失效分类']==='已过期'||r['距离失效分类']==='1个月内';}).length;
-  var longStorage = recs.filter(function(r){return r['在库天数分类']==='6个月以上';}).length;
+  var dedupRecs = dedupByBatch(recs);
+  var longStorage = dedupRecs.filter(function(r){return r['在库天数分类']==='6个月以上';}).length;
 
   var stats = [
     {label:'总品种数', value:total.toLocaleString(), color:'var(--accent)'},
@@ -732,7 +758,9 @@ function renderCharts() {
 
   var storageData = {};
   STORAGE_ORDER.forEach(function(k){storageData[k]={count:0,qty:0};});
-  recs.forEach(function(r){ var k=r['在库天数分类']; if(storageData[k]){storageData[k].count++;storageData[k].qty+=(parseFloat(r['数量'])||0);} });
+  var dedupRecs2 = dedupByBatch(recs);
+  dedupRecs2.forEach(function(r){ var k=r['在库天数分类']; if(storageData[k]){storageData[k].count++;} });
+  recs.forEach(function(r){ var k=r['在库天数分类']; if(storageData[k]){storageData[k].qty+=(parseFloat(r['数量'])||0);} });
 
   if (mStorageChart) mStorageChart.destroy();
   mStorageChart = new Chart(document.getElementById('mStorageChart'), {
@@ -778,10 +806,11 @@ function getStorageBadgeClass(cat) {
 var mFilteredRecords = [];
 
 function renderDetailList() {
-  var recs = sortRecordsM(getFilteredM());
+  var raw = getFilteredM();
+  var recs = sortRecordsM(dedupByBatch(raw));
   mFilteredRecords = recs;
   mDisplayCount = M_PAGE_SIZE;
-  document.getElementById('mTableCount').textContent = '共 ' + recs.length + ' 条';
+  document.getElementById('mTableCount').textContent = '共 ' + recs.length + ' 条（去重后）';
   renderDetailCards(recs);
 }
 
@@ -850,7 +879,8 @@ function loadMoreItems() {
 
 /* ========== Detail Modal ========== */
 function showDetail(idx) {
-  var recs = sortRecordsM(getFilteredM());
+  var raw = getFilteredM();
+  var recs = sortRecordsM(dedupByBatch(raw));
   var r = recs[idx];
   if (!r) return;
 
